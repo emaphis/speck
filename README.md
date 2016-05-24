@@ -1,32 +1,19 @@
 # speck
 
-FIXME: description
+Practicing with Clojure 1.9's spec feature
+Using Clojure 1.9-alpha1
 
-## Installation
+Spec is a new Clojure feature for specifying functions, similar to a static
+type system, but more amenable to dynamic typing.
 
-Download from http://example.com/FIXME.
+See here for more info: <lojure.org/about/spec>
 
-## Usage
+The tutorial is located <http://clojure.org/guides/spec>
 
-FIXME: explanation
+## Location:
 
-    $ java -jar speck-0.1.0-standalone.jar [args]
+http://www.github.com/emaphis/speck
 
-## Options
-
-FIXME: listing of options this app accepts.
-
-## Examples
-
-...
-
-### Bugs
-
-...
-
-### Any Other Sections
-### That You Think
-### Might be Useful
 
 ## License
 
