@@ -106,4 +106,132 @@ speck.core>
 ;; At: [:unit] val: () fails predicate: keyword?,  Insufficient input
 
 
+;; various occurence operators *, +, and ?:
+
+(s/def ::seq-of-keywords (s/* keyword?))
+
+(s/conform ::seq-of-keywords [:a :b :c])
+;; [:a :b :c]
+
+(s/explain ::seq-of-keywords [10 20])
+;; val: 10 fails spec: :speck.core/seq-of-keywords predicate: keyword?
+
+(s/def ::odds-then-maybe-even (s/cat :odds (s/+ odd?)
+                                     :even (s/? even?)))
+(s/conform ::odds-then-maybe-even [1 3 5 100])
+;; {:odds [1 3 5], :even 100}
+
+(s/conform ::odds-then-maybe-even [1])
+;; {:odds [1]}
+
+(s/explain ::odds-then-maybe-even [100])
+;; At: [:odds] val: 100 fails spec: :speck.core/odds-then-maybe-even predicate: odd?
+
+;; opts are alternating keyword and booleans
+(defn boolean? [b] (instance? Boolean b))
+(s/def ::opts (s/* (s/cat :opt keyword? :val boolean?)))
+(s/conform ::opts [:silent? false :verbose true])
+;; [{:opt :silent?, :val false} {:opt :verbose, :val true}]
+
+
+;; use alt to specify alternatives within the sequential data
+(s/def ::config (s/*
+                 (s/cat :prop string?
+                        :val (s/alt :s string? :b boolean?))))
+
+(s/conform ::config ["-server" "foo" "-verbose" true "-user" "joe"])
+
+;;[{:prop "-server", :val [:s "foo"]}
+;; {:prop "-verbose", :val [:b true]}
+;; {:prop "-user", :val [:s "joe"]}]
+
+
+;; If you need a description of a specification, use describe to retrieve one
+(s/describe ::seq-of-keywords)
+;; (* keyword?)
+
+(s/describe ::odds-then-maybe-even)
+;; (cat :odds (+ odd?) :even (? even?))
+
+(s/describe ::opts)
+;; (* (cat :opt keyword? :val boolean?))
+
+
+;; &, which takes a regex operator and constrains it with one or more additional predicates.
+(s/def ::even-strings (s/& (s/* string?) #(even? (count %))))
+(s/valid? ::even-strings ["a"]) ;; false
+(s/valid? ::even-strings ["a" "b"]) ;; true
+(s/valid? ::even-strings ["a" "b" "c"]) ;; false
+(s/valid? ::even-strings [1 2]) ;; false
+(s/explain ::even-strings [1 2])
+;; val: 1 fails spec: :speck.core/even-strings predicate: string?
+
+
+;; include a nested sequential collection, you must use an explicit call to spec to start
+;; a new nested regex context
+;; for example:  [:names ["a" "b"] :nums [1 2 3]]
+
+(s/def ::nested
+  (s/cat :names-kw #{:names}
+         :names (s/spec (s/* string?))
+         :nums-kw #{:nums}
+         :nums (s/spec (s/* number?))))
+
+(s/conform ::nested [:names ["a" "b"] :nums [1 2 3]])
+;; {:names-kw :names, :names ["a" "b"], :nums-kw :nums, :nums [1 2 3]}
+
+;; If the specs were removed this spec would instead match a sequence
+;; like [:names "a" "b" :nums 1 2 3]
+(s/def ::unnested
+  (s/cat :names-kw #{:names}
+         :names (s/* string?)
+         :nums-kw #{:nums}
+         :nums (s/* number?)))
+
+(s/conform ::unnested [:names "a" "b" :nums 1 2 3])
+;; {:names-kw :names, :names ["a" "b"], :nums-kw :nums, :nums [1 2 3]}
+
+
+;; Entity Maps
+;; Entity maps in spec are defined with keys:
+
+(def email-regex #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$")
+(s/def ::email-type (s/and string? #(re-matches email-regex %)))
+
+(s/def ::acctid integer?)
+(s/def ::first-name string?)
+(s/def ::last-name string?)
+(s/def ::email ::email-type)
+
+(s/def ::person (s/keys :req [::first-name ::last-name ::email]
+                        :opt [::phone]))
+
+
+
+(s/valid? ::person
+          {::first-name "Elon"
+           ::last-name "Musk"
+           ::email "elon@example.com"})
+;; true
+
+;; Fails required key check
+(s/explain ::person
+  {::first-name "Elon"})
+;; val: {:speck.core/first-name "Elon"} fails predicate: [(contains? % :speck.core/last-name)
+;; (contains? % :speck.core/email)]
+
+;; Fails attribute conformance
+(s/explain ::person
+  {::first-name "Elon"
+   ::last-name "Musk"
+   ::email "n/a"})
+;; At: [:speck.core/email] val: "n/a" fails spec: :speck.core/email predicate: (re-matches email-regex %)
+
+
+;; a person map that uses unqualified keys but checks conformance against the namespaced specs we registered earlier:
+
+(s/def :unq/person
+  (s/keys :req-un [::first-name ::last-name ::email]
+          :opt-un [::phone]))
+
 

@@ -6,7 +6,7 @@ Using Clojure 1.9-alpha1
 Spec is a new Clojure feature for specifying functions, similar to a static
 type system, but more amenable to dynamic typing.
 
-See here for more info: <chttp://clojure.org/about/spec>
+See here for more info: <http://clojure.org/about/spec>
 
 The tutorial is located <http://clojure.org/guides/spec>
 
