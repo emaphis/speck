@@ -1,5 +1,6 @@
-(ns speck.core
-  (:require [clojure.spec :as s]))
+(ns speck.core )
+;;  (:require [clojure.spec :as s]))
+(require '[clojure.spec :as s])
 
 ;; Following the tutorial at: <http://clojure.org/guides/spec>
 
@@ -16,7 +17,6 @@
 
 ;;; some examples
 
-speck.core>
 (s/valid? nil? nil) ;; true
 (s/valid? string? "abc") ;; true
 (s/valid? #(> % 5) 10) ;; true
@@ -106,7 +106,7 @@ speck.core>
 ;; At: [:unit] val: () fails predicate: keyword?,  Insufficient input
 
 
-;; various occurence operators *, +, and ?:
+;;; various occurence operators *, +, and ?:
 
 (s/def ::seq-of-keywords (s/* keyword?))
 
@@ -192,8 +192,8 @@ speck.core>
 ;; {:names-kw :names, :names ["a" "b"], :nums-kw :nums, :nums [1 2 3]}
 
 
-;; Entity Maps
-;; Entity maps in spec are defined with keys:
+;;; Entity Maps
+;;  Entity maps in spec are defined with keys:
 
 (def email-regex #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$")
 (s/def ::email-type (s/and string? #(re-matches email-regex %)))
@@ -234,4 +234,52 @@ speck.core>
   (s/keys :req-un [::first-name ::last-name ::email]
           :opt-un [::phone]))
 
+(s/conform :unq/person
+  {:first-name "Elon"
+   :last-name "Musk"
+   :email "elon@example.com"})
+;;{:first-name "Elon",
+;; :last-name "Musk",
+;; :email "elon@example.com"}
+
+(s/explain :unq/person
+  {:first-name "Elon"
+   :last-name "Musk"
+   :email "n/a"})
+
+(s/explain :unq/person
+           {:first-name "Elon"})
+;; val: {:first-name "Elon"} fails predicate: [(contains? % :last-name)
+;; (contains? % :email)]
+
+
+;; Unqualified keys can also be used to validate record attributes:
+(defrecord Person [first-name last-name email phone])
+
+(s/explain :unq/person
+           (->Person "Elon" nil nil nil)) ;; Success
+
+(s/conform :unq/person
+           (->Person "Elon" "Musk" "elon@example.com" nil))
+;; #speck.core.Person{:first-name "Elon", :last-name "Musk",
+;;                    :email "elon@example.com", :phone nil}
+
+;; One common occurrence in Clojure is the use of "keyword args" where
+;; keyword keys and values are passed in a sequential data structure as options.
+
+(s/def ::port number?)
+(s/def ::host string?)
+(s/def ::id keyword?)
+(s/def ::server (s/keys* :req [::id ::host] :opt [::port]))
+(s/conform ::server [::id :s1 ::host "example.com" ::port 5555])
+;; {:speck.core/id :s1, :speck.core/host "example.com", :speck.core/port 5555}
+
+
+;;; Mutli-spec
+
+(s/def :event/type keyword?)
+(s/def :event/timestamp integer?)
+(s/def :search/url string?)
+(s/def :error/message string?)
+(s/def :error/code integer?)
 
