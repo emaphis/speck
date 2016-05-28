@@ -283,3 +283,143 @@
 (s/def :error/message string?)
 (s/def :error/code integer?)
 
+
+
+(defmulti event-type :event/type)
+(defmethod event-type :event/search [_]
+  (s/keys :req [:event/type :event/timestamp :search/url]))
+(defmethod event-type :event/error [_]
+  (s/keys :req [:event/type :event/timestamp :error/message :error/code]))
+
+(s/def :event/event (s/multi-spec event-type :event/type))
+
+(s/valid? :event/event
+  {:event/type :event/search
+   :event/timestamp 1463970123000
+   :search/url "http://clojure.org"})
+
+
+(s/valid? :event/event
+  {:event/type :event/error
+   :event/timestamp 1463970123000
+   :error/message "Invalid host"
+   :error/code 500})
+
+(s/explain :event/event
+  {:event/type :event/restart})
+;; val: {:event/type :event/restart} fails at: [:event/restart] predicate: my.domain/event-type,  no method
+(s/explain :event/event
+  {:event/type :event/search
+   :search/url 200})
+;; val: {:event/type :event/search, :search/url 200} fails at: [:event/search] predicate: [(contains? % :event/timestamp)]
+;; In: [:search/url] val: 200 fails spec: :search/url at: [:event/search :search/url] predicate: 
+
+
+;;; Collections
+
+;; For the special case of a homogenous collection of arbitrary size,
+;; you can use coll-of
+;; coll-of must be provided a seed collection to use when conforming elements
+;; - something like [], (), or (sorted-set)
+
+(s/conform (s/coll-of keyword? []) [:a :b :c])
+;; [:a :b :c]
+
+(s/conform (s/coll-of number? #{}) #{5 10 2})
+;; #{2 5 10}
+
+;; another case is a fixed-size positional collection with fields of known type at
+;; different positions. For that we have tuple
+
+;;(s/def ::point (s/tuple double? double? double?))
+;;(s/conform ::point [1.5 2.5 -0.5])
+
+;; map-of for maps with homogenous key and value predicates.
+
+(s/def ::scores (s/map-of string? integer?))
+(s/conform ::scores {"Sally" 1000, "Joe" 500})
+;; {"Sally" 1000, "Joe" 500}
+
+
+;;; Using spec for validation
+;;spec can be used for runtime data validation.
+
+(defn person-name
+  [person]
+  {:pre  [(s/valid? ::person person)]
+   :post [(s/valid? string? %)]}
+  (str (::first-name person) " " (::last-name person)))
+
+(person-name 42)
+;; Assert failed: (s/valid? :speck.core/person person)
+
+(person-name {::first-name "Elon" ::last-name "Musk" ::email "elon@example.com"})
+;; "Elon Musk"
+
+
+;; call conform and use the return value to destructure the input.
+
+;(defn configure [input]
+;  (let [parsed (s/conform ::config input)]
+;    (if (= parsed ::s/invalid)
+;      (throw (ex-info "Invalid input" (s/explain-data ::config input)))
+;      (for [{prop :prop [_ val] :val} parsed]
+;        (set-config (subs prop 1) val)))))
+
+
+
+;; Spec'ing functions
+;; using fdef
+
+
+(defn ranged-rand
+  "Returns random integer in range start <= rand < end"
+  [start end]
+  (+ start (rand-int (- end start))))
+
+
+(s/fdef ranged-rand
+        :args (s/and (s/cat :start integer? :end integer?)
+                     #(< (:start %) (:end %)))
+        :ret integer?
+        :fn (s/and #(>= (:ret %) (-> % :args :start))
+                   #(< (:ret %) (-> % :args :end))))
+
+(s/instrument #'ranged-rand)
+
+(ranged-rand 8 5)
+;;   Call to #'speck.core/ranged-rand did not conform to spec: val:
+;;   {:start 8, :end 5} fails at: [:args] predicate: (< (:start %) (:end
+;;   %)) :clojure.spec/args (8 5)
+
+
+;; erroneous version
+(defn ranged-rand   ;; BROKEN!
+  "Returns random integer in range start <= rand < end"
+  [start end]
+  (+ start (rand-int (- start end))))
+
+
+;; Call to  #'spec.examples.guide/ranged-rand did not conform to spec:
+;;val: {:args {:start 5, :end 8}, :ret 3} fails at: [:fn] predicate: (>= (:ret %) (-> % :args :start))
+;;:clojure.spec/args  (5 8)
+
+
+;; Higher order functions
+
+;;Higher order functions are common in Clojure and spec provides fspec to
+;;support spec’ing them.
+
+;;  returns a function that adds x. 
+(defn adder [x] #(+ x %))
+
+(s/fdef adder
+        :args (s/cat :x number?)
+        :ret  (s/fspec :args (s/cat :y number?)
+                       :ret number?)
+        :fn #(= (-> :args :x) ((:ret %) 0)))
+
+
+;;; Macros
+
+
