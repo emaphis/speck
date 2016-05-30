@@ -10,6 +10,8 @@ See here for more info: <http://clojure.org/about/spec>
 
 The tutorial is located <http://clojure.org/guides/spec>
 
+Another great tutorial <http://gigasquidsoftware.com/blog/2016/05/29/one-fish-spec-fish>
+
 ## Location:
 
 http://www.github.com/emaphis/speck
@@ -17,7 +19,7 @@ http://www.github.com/emaphis/speck
 
 ## License
 
-Copyright © 2016 FIXME
+Copyright © 2016 Ed Maphis
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
