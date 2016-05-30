@@ -428,4 +428,119 @@
 
 ;;; Macros
 
+;; Spec out the clojure.core/declare macro
+
+(s/fdef clojure.core/declare
+  :args (s/cat :names (s/* symbol?))
+  :ret  ::s/any)
+
+(declare 100)
+
+;;Call to clojure.core/declare did not conform to spec: In: [0] val:
+;;   (100) fails at: [:args] predicate: (cat :names (* symbol?)), Extra
+;;   input :clojure.spec/args (100)
+
+
+;;; Conformers
+;; Sometimes it will be necessary to automatically modify the conformed value
+;; and this can be accomplished with conformer
+
+(s/def ::name-or-id (s/or :name string?
+                          :id   integer?))
+
+(s/conform ::name-or-id "abc")
+;; [:name "abc"]
+(s/conform ::name-or-id 100)
+;; [:id 100]
+
+;; use a conformer
+(s/def ::name-or-id'
+  (s/and ::name-or-id
+         (s/conformer second)))
+
+(s/conform ::name-or-id' "abc")
+;; "abc"
+
+
+;;; Example
+;; A game of cards
+
+(def suit? #{:club :diamond :heart :spade})
+(def rank? (into #{:jack :queen :king :ace} (range 2 11)))
+(def deck (for [suit suit? rank rank?] [rank suit]))
+
+(s/def ::card (s/tuple rank? suit?))
+(s/def ::hand (s/* ::card))
+
+(s/def ::name string?)
+(s/def ::score integer?)
+(s/def ::player (s/keys :req [::name ::score ::hand]))
+
+(s/def ::players  (s/* ::player))
+(s/def ::deck (s/* ::card))
+(s/def ::game (s/keys :req [::players ::deck]))
+
+;; now validate a piece of this data against the schema:
+
+(def kenny
+  {::name "Kenny Rogers"
+   ::score 100
+   ::hand []})
+(s/valid? ::player kenny)
+;; true
+
+;; some bad data:
+(s/explain ::game
+           {::deck deck
+            ::players [{::name "Kenny Rogers"
+                        ::score 100
+                        ::hand [[2 :banana]]}]})nil
+;; In: [:speck.core/players 0 :speck.core/hand 0 1] val: :banana fails spec:
+;; :speck.core/card at: [:speck.core/players :speck.core/hand 1] predicate: suit?
+
+(defn total-cards [{:keys [::deck ::players] :as game}]
+  (apply + (count deck)
+         (map #(-> % ::hand count) players)))
+
+(defn deal [game] ...)
+
+(s/fdef deal
+        :args (s/cat :game ::game)
+        :ret  ::game
+        :fn   #(= (total-cards (-> % :args :game))
+                  (total-cards (-> % :ret))))
+
+;;; Generators
+
+(require '[clojure.spec.gen :as gen])
+
+(gen/generate (s/gen integer?))
+
+(gen/generate (s/gen nil?))
+
+(gen/sample (s/gen string?))
+;; ("" "" "u" "0" "" "H7H4" "6f3ZS" "" "wkzBFz7s" "54")
+;; ("" "" "" "6" "W" "" "zops3" "X0" "EVI" "LJwRKjN7o")
+
+(gen/sample (s/gen #{:club :diamond :heart :spade}))
+;; (:club :club :spade :heart :diamond :diamond :heart :diamond :heart :spade)
+
+(gen/sample (s/gen (s/cat :k keyword? :ns (s/+ number?))))
+
+
+;; generate a random player in out card game
+(gen/generate (s/gen ::player))
+
+;;{:speck.core/name "6r5PkICXTJ4VK8XzU6kgi",
+;; :speck.core/score 11363,
+;; :speck.core/hand ([:king :heart]
+;;                   [:jack :spade]
+;;                   [3 :heart]
+;;                   [8 :club]
+;;                   [9 :heart]
+;;                   [:ace :club]])}
+
+;; generating a whole game
+
+;; (gen/generate (s/gen ::game))
 
