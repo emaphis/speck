@@ -1,7 +1,9 @@
-(ns speck.core )
-;;  (:require [clojure.spec :as s]))
-(require '[clojure.spec :as s])
+(ns speck.core
+  (:require [clojure.spec :as s]
+            [clojure.spec.gen :as gen]
+            [clojure.spec.test :as stest]))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Following the tutorial at: <http://clojure.org/guides/spec>
 
 
@@ -19,6 +21,7 @@
 
 (s/valid? nil? nil) ;; true
 (s/valid? string? "abc") ;; true
+
 (s/valid? #(> % 5) 10) ;; true
 (s/valid? #(> % 5) 2) ;; false
 
@@ -30,11 +33,13 @@
 (s/valid? #{:club :diamond :heart :spade} :club) ;; true
 (s/valid? #{:club :diamond :heart :spade} 42)  ;; false
 
+(s/valid? #{42,66} 42)  ;; true
+(s/valid? #{42,66} 33)  ;; false
 
 ;;; Registry
 ;; specs can be registered in a central namespaced registry
 
-(s/def ::date #(instance? Date %)) ;; :spec.core/date
+(s/def ::date  inst?) ;; :spec.core/date
 (s/def ::suit #{:club :diamond :heart :spade}) ;; :spec.core/suit
 
 ;; using registered specs
@@ -42,16 +47,16 @@
 (s/conform ::suit :club)  ;; :club
 
 
-;;; Composing predicates
+;;; Composing predicates with 'and', 'or'
 
-(s/def ::big-even (s/and integer? even? #(> % 1000)))
+(s/def ::big-even (s/and integer? even? #(> % 1000))) ;; :speck.core/big-even
 (s/valid? ::big-even :foo) ;; false
 (s/valid? ::big-even 10)   ;; false
 (s/valid? ::big-even 10000) ;; true
 
 ;; use s/or to specify two alternatives
 (s/def ::name-or-id (s/or :name string?
-                          :id   integer?))
+                          :id   integer?))  ;;:speck.core/name-or-id
 (s/valid? ::name-or-id "abd") ;; true
 (s/valid? ::name-or-id 100) ;; true
 (s/valid? ::name-or-id :foo) ;; false
@@ -76,8 +81,9 @@
 ;; val: 5 fails predicate: even?
 
 (s/explain ::name-or-id :foo)
-;; At: [:name] val: :foo fails predicate: string?
-;; At: [:id] val: :foo fails predicate: integer?
+;; val: :foo fails spec: :speck.core/name-or-id at: [:name] predicate: string?
+;; val: :foo fails spec: :speck.core/name-or-id at: [:id] predicate: integer?
+
 
 ;; use explain-data to receive the errors as data, which can be attached to
 ;; an exception or acted upon for further analysis.
