@@ -21,6 +21,7 @@
 ;; val: 5 fails predicate: (set (keys fish-numbers))
 
 
+
 ;; color specification
 (s/def ::color #{"Red" "Blue" "Dun"})
 
@@ -154,3 +155,8 @@
 ;;   :in []}},
 ;; :clojure.spec/args (2 1 "Red" "Blue")}
 
+
+(defn add3
+  "Add 3 to a given number"
+  [num]
+  (+ 3 num))
