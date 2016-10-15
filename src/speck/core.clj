@@ -8,7 +8,7 @@
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Predicates
+;;; Predicates
 
 ;;; does data conform to a predicate
 ;; implicitly convers a predicate to a spec
@@ -87,6 +87,7 @@
 (s/valid? (s/nilable string?) nil) ;; true
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Explain
 ;;  reports 'why' a value does not conform to a spec
 
@@ -207,7 +208,95 @@
 ;; #:speck.core{:id :s1, :host "example.com", :port 5555}
 
 
+;; Entity maps can be declared in parts, then s/merge can be used to combine them
 
+(s/def :animal/kind string?)
+(s/def :animal/says string?)
+(s/def :animal/common (s/keys :req [:animal/kind :animal/says]))
+(s/def :dog/tail? boolean?)
+(s/def :dog/breed string?)
+(s/def :animal/dog (s/merge :animal/common
+                            (s/keys :req [:dog/tail? :dog/breed])))
+
+(s/valid? :animal/dog
+          {:animal/kind "dog"
+           :animal/says "woof"
+           :dog/tail? true
+           :dog/breed "retrirver"})
+;;=> true
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Mutli-spec
+
+(s/def :event/type keyword?)
+(s/def :event/timestamp integer?)
+(s/def :search/url string?)
+(s/def :error/message string?)
+(s/def :error/code integer?)
+
+
+
+(defmulti event-type :event/type)
+(defmethod event-type :event/search [_]
+  (s/keys :req [:event/type :event/timestamp :search/url]))
+(defmethod event-type :event/error [_]
+  (s/keys :req [:event/type :event/timestamp :error/message :error/code]))
+
+(s/def :event/event (s/multi-spec event-type :event/type))
+
+(s/valid? :event/event
+  {:event/type :event/search
+   :event/timestamp 1463970123000
+   :search/url "http://clojure.org"})
+
+
+(s/valid? :event/event
+  {:event/type :event/error
+   :event/timestamp 1463970123000
+   :error/message "Invalid host"
+   :error/code 500})
+
+(s/explain :event/event
+  {:event/type :event/restart})
+;; val: {:event/type :event/restart} fails at: [:event/restart] predicate: my.domain/event-type,  no method
+(s/explain :event/event
+  {:event/type :event/search
+   :search/url 200})
+;; val: {:event/type :event/search, :search/url 200} fails at: [:event/search] predicate: [(contains? % :event/timestamp)]
+;; In: [:search/url] val: 200 fails spec: :search/url at: [:event/search :search/url] predicate: 
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Collections
+
+;; For the special case of a homogenous collection of arbitrary size,
+;; you can use coll-of
+;; coll-of must be provided a seed collection to use when conforming elements
+;; - something like [], (), or (sorted-set)
+
+(s/conform (s/coll-of keyword? []) [:a :b :c])
+;; [:a :b :c]
+
+(s/conform (s/coll-of number? #{}) #{5 10 2})
+;; #{2 5 10}
+
+;; another case is a fixed-size positional collection with fields of known type at
+;; different positions. For that we have tuple
+
+(s/def ::point (s/tuple float? float? float?))
+(s/conform ::point [1.5 2.5 -0.5])
+;; [1.5 2.5 -0.5]
+
+;; map-of for maps with homogenous key and value predicates.
+
+(s/def ::scores (s/map-of string? integer?))
+(s/conform ::scores {"Sally" 1000, "Joe" 500})
+;; {"Sally" 1000, "Joe" 500}
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Sequences
 ;; uses  regular expression operators to describe the structure of a sequential data value:
 
@@ -313,74 +402,7 @@
 ;; {:names-kw :names, :names ["a" "b"], :nums-kw :nums, :nums [1 2 3]}
 
 
-
-;;; Mutli-spec
-
-(s/def :event/type keyword?)
-(s/def :event/timestamp integer?)
-(s/def :search/url string?)
-(s/def :error/message string?)
-(s/def :error/code integer?)
-
-
-
-(defmulti event-type :event/type)
-(defmethod event-type :event/search [_]
-  (s/keys :req [:event/type :event/timestamp :search/url]))
-(defmethod event-type :event/error [_]
-  (s/keys :req [:event/type :event/timestamp :error/message :error/code]))
-
-(s/def :event/event (s/multi-spec event-type :event/type))
-
-(s/valid? :event/event
-  {:event/type :event/search
-   :event/timestamp 1463970123000
-   :search/url "http://clojure.org"})
-
-
-(s/valid? :event/event
-  {:event/type :event/error
-   :event/timestamp 1463970123000
-   :error/message "Invalid host"
-   :error/code 500})
-
-(s/explain :event/event
-  {:event/type :event/restart})
-;; val: {:event/type :event/restart} fails at: [:event/restart] predicate: my.domain/event-type,  no method
-(s/explain :event/event
-  {:event/type :event/search
-   :search/url 200})
-;; val: {:event/type :event/search, :search/url 200} fails at: [:event/search] predicate: [(contains? % :event/timestamp)]
-;; In: [:search/url] val: 200 fails spec: :search/url at: [:event/search :search/url] predicate: 
-
-
-;;; Collections
-
-;; For the special case of a homogenous collection of arbitrary size,
-;; you can use coll-of
-;; coll-of must be provided a seed collection to use when conforming elements
-;; - something like [], (), or (sorted-set)
-
-(s/conform (s/coll-of keyword? []) [:a :b :c])
-;; [:a :b :c]
-
-(s/conform (s/coll-of number? #{}) #{5 10 2})
-;; #{2 5 10}
-
-;; another case is a fixed-size positional collection with fields of known type at
-;; different positions. For that we have tuple
-
-(s/def ::point (s/tuple float? float? float?))
-(s/conform ::point [1.5 2.5 -0.5])
-;; [1.5 2.5 -0.5]
-
-;; map-of for maps with homogenous key and value predicates.
-
-(s/def ::scores (s/map-of string? integer?))
-(s/conform ::scores {"Sally" 1000, "Joe" 500})
-;; {"Sally" 1000, "Joe" 500}
-
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Using spec for validation
 ;;spec can be used for runtime data validation.
 
@@ -412,8 +434,8 @@
         (set-config (subs prop 1) val)))))
 
 
-
-;; Spec'ing functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Spec'ing functions
 ;; using fdef
 
 
@@ -450,7 +472,8 @@
 ;;:clojure.spec/args  (5 8)
 
 
-;; Higher order functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Higher order functions
 
 ;;Higher order functions are common in Clojure and spec provides fspec to
 ;;support spec’ing them.
@@ -465,6 +488,7 @@
         :fn #(= (-> :args :x) ((:ret %) 0)))
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Macros
 
 ;; Spec out the clojure.core/declare macro
@@ -480,6 +504,7 @@
 ;;   input :clojure.spec/args (100)
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Conformers
 ;; Sometimes it will be necessary to automatically modify the conformed value
 ;; and this can be accomplished with conformer
@@ -501,8 +526,8 @@
 ;; "abc"
 
 
-;;; Example
-;; A game of cards
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Example - A game of cards
 
 (def suit? #{:club :diamond :heart :spade})
 (def rank? (into #{:jack :queen :king :ace} (range 2 11)))
@@ -549,6 +574,8 @@
         :fn   #(= (total-cards (-> % :args :game))
                   (total-cards (-> % :ret))))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Generators
 
 (require '[clojure.spec.gen :as gen])
@@ -583,3 +610,10 @@
 
 ;; (gen/generate (s/gen ::game))
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Instrumentation and Testing
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Wrapping Up

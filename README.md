@@ -1,7 +1,7 @@
 # speck
 
 Practicing with Clojure 1.9's spec feature
-Using Clojure 1.9-alpha1
+Using Clojure 1.9-alpha13
 
 Spec is a new Clojure feature for specifying functions, similar to a static
 type system, but more amenable to dynamic typing.
@@ -15,6 +15,35 @@ Another great tutorial <http://gigasquidsoftware.com/blog/2016/05/29/one-fish-sp
 ## Location:
 
 http://www.github.com/emaphis/speck
+
+## Contents:
+
+    Getting started
+    Predicates
+    Registry
+    Composing predicates
+    Explain
+    Entity Maps
+    multi-spec
+    Collections
+    Sequences
+    Using spec for validation
+    Spec’ing functions
+    Higher order functions
+    Macros
+    A game of cards
+    Generators
+        Project Setup
+        Sampling Generators
+        Exercise
+        Using s/and Generators
+        Custom Generators
+        Range Specs and Generators
+    Instrumentation and Testing
+        Instrumentation
+        Testing
+        Combining check and instrument
+    Wrapping Up
 
 
 ## License
