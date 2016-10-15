@@ -7,46 +7,62 @@
 ;; Following the tutorial at: <http://clojure.org/guides/spec>
 
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Predicates
+
 ;;; does data conform to a predicate
 ;; implicitly convers a predicate to a spec
 (s/conform even? 1000)
 ;; => 1000
 
+(s/conform even? 1001)
+;; => :clojure.spec/invalid
+
 ;; similar but return a boolean
 (s/valid? even? 10)
 ;; => true
 
+(s/valid? even? 11)
+;; =>  false
+
 
 ;;; some examples
 
-(s/valid? nil? nil) ;; true
+(s/valid? nil? nil);; true
 (s/valid? string? "abc") ;; true
 
 (s/valid? #(> % 5) 10) ;; true
-(s/valid? #(> % 5) 2) ;; false
+(s/valid? #(> % 5) 0) ;; false
 
 (import java.util.Date)
-(s/valid? #(instance? Date %) (Date.)) ;; true
+(s/valid? inst? (Date.)) ;; true
 
 
 ;; Sets can also be used as predicates that match one or more literal values:
 (s/valid? #{:club :diamond :heart :spade} :club) ;; true
 (s/valid? #{:club :diamond :heart :spade} 42)  ;; false
 
-(s/valid? #{42,66} 42)  ;; true
+(s/valid? #{42} 42)  ;; true
 (s/valid? #{42,66} 33)  ;; false
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Registry
-;; specs can be registered in a central namespaced registry
+
+;; specs can be registered in a central namespaced registry using 'def'
 
 (s/def ::date  inst?) ;; :spec.core/date
 (s/def ::suit #{:club :diamond :heart :spade}) ;; :spec.core/suit
 
-;; using registered specs
+;; using registered specs, can be used in place of an inplace spec definition
 (s/valid? ::date (Date.)) ;; true
+(s/valid? ::date 3) ;; false
 (s/conform ::suit :club)  ;; :club
 
+;; registered specs can (and should) be used anywhere we compose specs
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Composing predicates with 'and', 'or'
 
 (s/def ::big-even (s/and integer? even? #(> % 1000))) ;; :speck.core/big-even
@@ -56,7 +72,7 @@
 
 ;; use s/or to specify two alternatives
 (s/def ::name-or-id (s/or :name string?
-                          :id   integer?))  ;;:speck.core/name-or-id
+                          :id   int?))  ;;:speck.core/name-or-id
 (s/valid? ::name-or-id "abd") ;; true
 (s/valid? ::name-or-id 100) ;; true
 (s/valid? ::name-or-id :foo) ;; false
@@ -75,22 +91,121 @@
 ;;  reports 'why' a value does not conform to a spec
 
 (s/explain ::suit 42)
-;; val: 42 fails predicate: #{:spade :heart :diamond :club}
+;; val: 42 fails spec: :speck.core/suit predicate: #{:spade :heart :diamond :club}
 
 (s/explain ::big-even 5)
-;; val: 5 fails predicate: even?
+;; val: 5 fails spec: :speck.core/big-even predicate: even?
 
 (s/explain ::name-or-id :foo)
 ;; val: :foo fails spec: :speck.core/name-or-id at: [:name] predicate: string?
-;; val: :foo fails spec: :speck.core/name-or-id at: [:id] predicate: integer?
+;; val: :foo fails spec: :speck.core/name-or-id at: [:id] predicate: int?
 
 
 ;; use explain-data to receive the errors as data, which can be attached to
 ;; an exception or acted upon for further analysis.
 (s/explain-data ::name-or-id :foo)
-;;{:clojure.spec/problems
-;; {[:name] {:pred string?, :val :foo, :via []},
-;;  [:id] {:pred integer?, :val :foo, :via []}}}
+
+;;#:clojure.spec{:problems ({:path [:name],
+;;                           :pred string?,
+;;                           :val :foo, :via [:speck.core/name-or-id],
+;;                           :in []}
+;;                          {:path [:id],
+;;                           :pred int?,
+;;                           :val :foo,
+;;                           :via [:speck.core/name-or-id],
+;;                           :in []})}
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Entity Maps
+
+;;  Entity maps in spec are defined with keys:
+
+(def email-regex #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$")
+(s/def ::email-type (s/and string? #(re-matches email-regex %)))
+
+(s/def ::acctid int?)
+(s/def ::first-name string?)
+(s/def ::last-name string?)
+(s/def ::email ::email-type)
+
+(s/def ::person (s/keys :req [::first-name ::last-name ::email]
+                        :opt [::phone]))
+
+
+
+(s/valid? ::person
+          {::first-name "Elon"
+           ::last-name "Musk"
+           ::email "elon@example.com"})
+;; true
+
+;; Fails required key check
+(s/explain ::person
+  {::first-name "Elon"})
+;; val: #:speck.core{:first-name "Elon"} fails spec: :speck.core/person predicate: (contains? % :speck.core/last-name)
+;; val: #:speck.core{:first-name "Elon"} fails spec: :speck.core/person predicate: (contains? % :speck.core/email)
+
+
+;; Fails attribute conformance
+(s/explain ::person
+  {::first-name "Elon"
+   ::last-name "Musk"
+   ::email "n/a"})
+;; In: [:speck.core/email] val: "n/a" fails spec: :speck.core/email-type at: [:speck.core/email] predicate: (re-matches email-regex %)
+
+
+;; a person map that uses unqualified keys but checks conformance against the namespaced specs we registered earlier:
+
+(s/def :unq/person
+  (s/keys :req-un [::first-name ::last-name ::email]
+          :opt-un [::phone]))
+
+(s/conform :unq/person
+  {:first-name "Elon"
+   :last-name "Musk"
+   :email "elon@example.com"})
+;;{:first-name "Elon",
+;; :last-name "Musk",
+;; :email "elon@example.com"}
+
+(s/explain :unq/person
+  {:first-name "Elon"
+   :last-name "Musk"
+   :email "n/a"})
+;; In: [:email] val: "n/a" fails spec: :speck.core/email-type at: [:email] predicate: (re-matches email-regex %)
+
+
+(s/explain :unq/person
+           {:first-name "Elon"})
+;; val: {:first-name "Elon"} fails spec: :unq/person predicate: (contains? % :last-name)
+;; val: {:first-name "Elon"} fails spec: :unq/person predicate: (contains? % :email)
+
+
+;; Unqualified keys can also be used to validate record attributes:
+(defrecord Person [first-name last-name email phone])
+
+(s/explain :unq/person
+           (->Person "Elon" nil nil nil))
+;; In: [:last-name] val: nil fails spec: :speck.core/last-name at: [:last-name] predicate: string?
+;; In: [:email] val: nil fails spec: :speck.core/email-type at: [:email] predicate: string?
+
+(s/conform :unq/person
+           (->Person "Elon" "Musk" "elon@example.com" nil))
+;; #speck.core.Person{:first-name "Elon", :last-name "Musk",
+;;                    :email "elon@example.com", :phone nil}
+
+
+;; One common occurrence in Clojure is the use of "keyword args" where
+;; keyword keys and values are passed in a sequential data structure as options.
+
+(s/def ::port number?)
+(s/def ::host string?)
+(s/def ::id keyword?)
+(s/def ::server (s/keys* :req [::id ::host] :opt [::port]))
+(s/conform ::server [::id :s1 ::host "example.com" ::port 5555])
+;; #:speck.core{:id :s1, :host "example.com", :port 5555}
+
 
 
 ;;; Sequences
@@ -197,88 +312,6 @@
 (s/conform ::unnested [:names "a" "b" :nums 1 2 3])
 ;; {:names-kw :names, :names ["a" "b"], :nums-kw :nums, :nums [1 2 3]}
 
-
-;;; Entity Maps
-;;  Entity maps in spec are defined with keys:
-
-(def email-regex #"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,63}$")
-(s/def ::email-type (s/and string? #(re-matches email-regex %)))
-
-(s/def ::acctid integer?)
-(s/def ::first-name string?)
-(s/def ::last-name string?)
-(s/def ::email ::email-type)
-
-(s/def ::person (s/keys :req [::first-name ::last-name ::email]
-                        :opt [::phone]))
-
-
-
-(s/valid? ::person
-          {::first-name "Elon"
-           ::last-name "Musk"
-           ::email "elon@example.com"})
-;; true
-
-;; Fails required key check
-(s/explain ::person
-  {::first-name "Elon"})
-;; val: {:speck.core/first-name "Elon"} fails predicate: [(contains? % :speck.core/last-name)
-;; (contains? % :speck.core/email)]
-
-;; Fails attribute conformance
-(s/explain ::person
-  {::first-name "Elon"
-   ::last-name "Musk"
-   ::email "n/a"})
-;; At: [:speck.core/email] val: "n/a" fails spec: :speck.core/email predicate: (re-matches email-regex %)
-
-
-;; a person map that uses unqualified keys but checks conformance against the namespaced specs we registered earlier:
-
-(s/def :unq/person
-  (s/keys :req-un [::first-name ::last-name ::email]
-          :opt-un [::phone]))
-
-(s/conform :unq/person
-  {:first-name "Elon"
-   :last-name "Musk"
-   :email "elon@example.com"})
-;;{:first-name "Elon",
-;; :last-name "Musk",
-;; :email "elon@example.com"}
-
-(s/explain :unq/person
-  {:first-name "Elon"
-   :last-name "Musk"
-   :email "n/a"})
-
-(s/explain :unq/person
-           {:first-name "Elon"})
-;; val: {:first-name "Elon"} fails predicate: [(contains? % :last-name)
-;; (contains? % :email)]
-
-
-;; Unqualified keys can also be used to validate record attributes:
-(defrecord Person [first-name last-name email phone])
-
-(s/explain :unq/person
-           (->Person "Elon" nil nil nil)) ;; Success
-
-(s/conform :unq/person
-           (->Person "Elon" "Musk" "elon@example.com" nil))
-;; #speck.core.Person{:first-name "Elon", :last-name "Musk",
-;;                    :email "elon@example.com", :phone nil}
-
-;; One common occurrence in Clojure is the use of "keyword args" where
-;; keyword keys and values are passed in a sequential data structure as options.
-
-(s/def ::port number?)
-(s/def ::host string?)
-(s/def ::id keyword?)
-(s/def ::server (s/keys* :req [::id ::host] :opt [::port]))
-(s/conform ::server [::id :s1 ::host "example.com" ::port 5555])
-;; {:speck.core/id :s1, :speck.core/host "example.com", :speck.core/port 5555}
 
 
 ;;; Mutli-spec
