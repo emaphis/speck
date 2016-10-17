@@ -792,28 +792,157 @@
 ;; (:speck.core/name :speck.core/id :speck.core/name ...)
 
 
+(def kw-gen-2 (gen/fmap #(keyword "speck.core" %) (gen/string-alphanumeric)))
+(gen/sample kw-gen-2 5)
+;; (:speck.core/ :speck.core/8 :speck.core/ :speck.core/u5 :speck.core/Yn)
+
+
+;; filter with such-that
+(def kw-gen-3 (gen/fmap #(keyword "speck.core" %)
+                        (gen/such-that #(not= % "")
+                                       (gen/string-alphanumeric))))
+
+(gen/sample kw-gen-3 5)
+;; (:speck.core/t :speck.core/8 :speck.core/P :speck.core/B :speck.core/vfUS)
+
+;; Now return to the hello example
+(s/def ::hello
+  (s/with-gen #(clojure.string/includes? % "hello")
+    #(gen/fmap (fn [[s1 s2]] (str s1 "hello" s2))
+               (gen/tuple (gen/string-alphanumeric (gen/string-alphanumeric))))))
+
+(gen/sample (s/gen ::hello))
+;; ("hello" "hello" "9Phello" "mr0hello" "hello" "1Vkighello" "QK74Whello" "31UWhello" "BhYhello" "V6M9072zFhello")
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Range Specs and Generators
+
+;; for a range of int values (say in a bowling roll) use int-in
+
+(s/def ::roll (s/int-in 0 11))
+(gen/sample (s/gen ::roll))
+;; (0 0 1 0 2 2 2 1 1 7)
+
+;; inst-in for a range of instants:
+(s/def ::the-aughts (s/inst-in #inst "2000" #inst "2010"))
+(drop 50 (gen/sample (s/gen ::the-aughts) 55))
+
+;;(#inst "2008-12-25T01:29:10.730-00:00"
+;; #inst "2000-01-01T00:00:00.007-00:00"
+;; #inst "2000-01-01T00:17:05.685-00:00"
+;; #inst "2007-02-01T16:08:08.246-00:00"
+;; #inst "2000-01-01T00:00:00.109-00:00")
+
+;; double-in supports double ranges with options for checking NaN, Infinity, -Infinity
+(s/def ::dubs (s/double-in :min -100.0 :NaN? false :infinite? false))
+(s/valid? ::dubs 2.9) ;;true
+
+(s/valid? ::dubs Double/POSITIVE_INFINITY) ;; false
+
+(gen/sample (s/gen ::dubs))
+;; (-1.0 -2.0 0.625 0.5 0.0 1.0 3.25 -0.75 -0.5 -4.5)
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Instrumentation and Testing
-(s/instrument  #'ranged-rand)
 
+;; include development and testing functionality:
+(require '[clojure.spec.test :as stest])
+
+;;; Instrumentation
+
+
+(stest/instrument `ranged-rand)
+
+;; now if args don't meet the spec then you have and error:
 (ranged-rand 8 5)
+
+;;1. Unhandled clojure.lang.ExceptionInfo
 ;;   Call to #'speck.core/ranged-rand did not conform to spec: val:
 ;;   {:start 8, :end 5} fails at: [:args] predicate: (< (:start %) (:end
-;;   %)) :clojure.spec/args (8 5)
+;;   %)) :clojure.spec/args (8 5) :clojure.spec/failure :instrument
+;;   :clojure.spec.test/caller {:file
+;;   "form-init2395958824592787937.clj", :line 860, :var-scope
+;;   speck.core/eval12488}
+
+;;   {:clojure.spec/problems [{:path [:args], :pred (< (:start %) (:end %)), :val {:start 8, :end 5}, :via [], :in []}], :clojure.spec/args (8 5), :clojure.spec/failure :instrument, :clojure.spec.test/caller {:file "form-init2395958824592787937.clj", :line 860, :var-scope speck.core/eval12488}}
 
 
-;; erroneous version
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Testing
+
+(require '[clojure.spec.test :as stest])
+
+(stest/check `ranged-rand)
+;; ({:spec #object[clojure.spec$fspec_impl$reify__14270 0x71f5b9e3 "clojure.spec$fspec_impl$reify__14270@71f5b9e3"],
+;;  :clojure.spec.test.check/ret {:result true, :num-tests 1000, :seed 1476665471858}, :sym speck.core/ranged-rand})
+
+;; an error: start and end are swapped
 (defn ranged-rand   ;; BROKEN!
-  "Returns random integer in range start <= rand < end"
+  "Returns random int in rane start <= rand end."
   [start end]
-  (+ start (rand-int (- start end))))
+  (+ start (long (rand (- start end)))))
+
+(stest/abbrev-result (first (stest/check `ranged-rand)))
+
+;;{:spec (fspec
+;;        :args (and (cat :start int? :end int?) (fn* [p1__11467#] (< (:start p1__11467#) (:end p1__11467#)))) :ret int?
+;;        :fn (and
+;;             (fn* [p1__11468#] (>= (:ret p1__11468#) (-> p1__11468# :args :start)))
+;;             (fn* [p1__11469#] (< (:ret p1__11469#) (-> p1__11469# :args :end))))),
+;; :sym speck.core/ranged-rand,
+;; :failure {:clojure.spec/problems [{:path [:fn],
+;;                                   :pred (>= (:ret %) (-> % :args :start)),
+;;                                    :val {:args {:start -4, :end -2}, :ret -5},
+;;                                    :via [], :in []}], :clojure.spec.test/args (-4 -2),
+;;           :clojure.spec.test/val {:args {:start -4, :end -2}, :ret -5},
+;;           :clojure.spec/failure :check-failed}}
 
 
-;; Call to  #'spec.examples.guide/ranged-rand did not conform to spec:
-;;val: {:args {:start 5, :end 8}, :ret 3} fails at: [:fn] predicate: (>= (:ret %) (-> % :args :start))
-;;:clojure.spec/args  (5 8)
+;; you can check all of the spec'ed funtions in a namespace with enumerate-namespace
+
+(-> (stest/enumerate-namespace 'user) stest/check)  ;; ()
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Combining check and instrument
+
+;; code under test
+
+(defn invoke-service [service request]
+  ;; invokes remote service
+  )
+
+(defn run-query [service query]
+  (let [{::keys [result error]} (invoke-service service {::query query})]
+    (or result error)))
+
+;; spec these functions using:
+(s/def ::query string?)
+(s/def ::request (s/keys :req [::query]))
+(s/def ::result (s/coll-of string? :gen-max 3))
+(s/def ::error int?)
+(s/def ::response (s/or :ok (s/keys :req [::result])
+                    :err (s/keys :req [::error])))
+
+(s/fdef invoke-service
+  :args (s/cat :service any? :request ::request)
+  :ret ::response)
+
+(s/fdef run-query
+  :args (s/cat :service any? :query string?)
+  :ret (s/or :ok ::result :err ::error))
+
+
+
+
+;; now test the behavior of run-query while subbing out invoke-service
+
+(stest/instrument `invoke-service {:stub #{`invocke-service}})
+;; [speck.core/invoke-service]
+(invocke-service nil {::query "test"})
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
