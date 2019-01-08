@@ -1,7 +1,9 @@
 (ns speck.core
-  (:require [clojure.spec :as s]
-            [clojure.spec.gen :as gen]
-            [clojure.spec.test :as stest]))
+  (:require [clojure.spec.alpha :as s]
+            [clojure.spec.gen.alpha :as gen]
+            [clojure.spec.test.alpha :as stest]
+            [clojure.repl :as r]))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Following the tutorial at: <http://clojure.org/guides/spec>
@@ -16,7 +18,7 @@
 ;; => 1000
 
 (s/conform even? 1001)
-;; => :clojure.spec/invalid
+;; => :clojure.spec.alpha/invalid
 
 ;; similar but return a boolean
 (s/valid? even? 10)
@@ -28,14 +30,13 @@
 
 ;;; some examples
 
-(s/valid? nil? nil);; true
+(s/valid? nil? nil) ;; true
 (s/valid? string? "abc") ;; true
 
 (s/valid? #(> % 5) 10) ;; true
 (s/valid? #(> % 5) 0) ;; false
 
-(import java.util.Date)
-(s/valid? inst? (Date.)) ;; true
+(s/valid? inst? (java.util.Date.)) ;; true
 
 
 ;; Sets can also be used as predicates that match one or more literal values:
@@ -43,36 +44,51 @@
 (s/valid? #{:club :diamond :heart :spade} 42)  ;; false
 
 (s/valid? #{42} 42)  ;; true
+(s/valid? #{42,33} 33) ;; true
 (s/valid? #{42,66} 33)  ;; false
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Registry
 
-;; specs can be registered in a central namespaced registry using 'def'
+;; specs can be registered in a central namespaced registry using `def`
 
-(s/def ::date  inst?) ;; :spec.core/date
-(s/def ::suit #{:club :diamond :heart :spade}) ;; :spec.core/suit
+(s/def ::date  inst?) ;; :speck.core/date
+(s/def ::suit #{:club :diamond :heart :spade}) ;; :speck.core/suit
 
 ;; using registered specs, can be used in place of an inplace spec definition
-(s/valid? ::date (Date.)) ;; true
+(s/valid? ::date (java.util.Date.)) ;; true
 (s/valid? ::date 3) ;; false
 (s/conform ::suit :club)  ;; :club
+(s/conform ::suit :spoon) ;; :clojure.spec.alpha/invalid
 
 ;; registered specs can (and should) be used anywhere we compose specs
 
+;; doc knows about registered specs
+(r/doc ::date)
+;; -------------------------
+;; :speck.core/date
+;; Spec
+;;   inst?
+(r/doc ::suit)
+;; -------------------------
+;; :speck.core/suit
+;; Spec
+;; #{:spade :heart :diamond :club}
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Composing predicates with 'and', 'or'
 
 (s/def ::big-even (s/and integer? even? #(> % 1000))) ;; :speck.core/big-even
 (s/valid? ::big-even :foo) ;; false
 (s/valid? ::big-even 10)   ;; false
 (s/valid? ::big-even 10000) ;; true
+(s/valid? ::big-even 10000.0) ;; false
 
 ;; use s/or to specify two alternatives
 (s/def ::name-or-id (s/or :name string?
-                          :id   int?))  ;;:speck.core/name-or-id
+                          :id   int?))  ;; :speck.core/name-or-id
 (s/valid? ::name-or-id "abd") ;; true
 (s/valid? ::name-or-id 100) ;; true
 (s/valid? ::name-or-id :foo) ;; false
@@ -81,9 +97,11 @@
 ;; or is conformed, it returns a vector with the tag name and conformed value:
 (s/conform ::name-or-id "abd") ;; [:name "abd"]
 (s/conform ::name-or-id 100)  ;; [:id 100]
+(s/conform ::name-or-id :foo) ;; :clojure.spec.alpha/invalid
 
-;; To include nil as a valid value, use the provided function nilable to make a spec:
+;; To include `nil` as a valid value, use the provided function `nilable` to make a spec:
 (s/valid? string? nil) ;; false
+;; test of string or nil
 (s/valid? (s/nilable string?) nil) ;; true
 
 
@@ -92,29 +110,43 @@
 ;;  reports 'why' a value does not conform to a spec
 
 (s/explain ::suit 42)
-;; val: 42 fails spec: :speck.core/suit predicate: #{:spade :heart :diamond :club}
+;; 42 - failed: #{:spade :heart :diamond :club} spec: :speck.core/suit
 
 (s/explain ::big-even 5)
-;; val: 5 fails spec: :speck.core/big-even predicate: even?
+;; 5 - failed: even? spec: :speck.core/big-even
 
 (s/explain ::name-or-id :foo)
-;; val: :foo fails spec: :speck.core/name-or-id at: [:name] predicate: string?
-;; val: :foo fails spec: :speck.core/name-or-id at: [:id] predicate: int?
+;; :foo - failed: string? at: [:name] spec: :speck.core/name-or-id
+;; :foo - failed: int? at: [:id] spec: :speck.core/name-or-id
+
+;; on failure explain gives us:
+;; val - the value in the user’s input that does not match
+;; spec - the spec that was being evaluated
+;; at - a path (a vector of keywords) indicating the location within the spec where
+;;  the error occurred - the tags in the path correspond to any tagged part in a
+;;  spec (the alternatives in an or or alt, the parts of a cat, the keys in a map,
+;;  etc)
+;; predicate - the actual predicate that was not satisfied by val
+
+;; in - the key path through a nested data val to the failing value.
+;; In this example, the top-level value is the one that is failing so this is
+;; essentially an empty path and is omitted.
 
 
 ;; use explain-data to receive the errors as data, which can be attached to
 ;; an exception or acted upon for further analysis.
 (s/explain-data ::name-or-id :foo)
-
-;;#:clojure.spec{:problems ({:path [:name],
-;;                           :pred string?,
-;;                           :val :foo, :via [:speck.core/name-or-id],
-;;                           :in []}
-;;                          {:path [:id],
-;;                           :pred int?,
-;;                           :val :foo,
-;;                           :via [:speck.core/name-or-id],
-;;                           :in []})}
+;; #:clojure.spec.alpha{:problems ({:path [:name],
+;;                                  :pred clojure.core/string?,
+;;                                  :val :foo,
+;;                                  :via [:speck.core/name-or-id],
+;;                                  :in []}
+;;                                 {:path [:id],
+;;                                  :pred clojure.core/int?,
+;;                                  :val :foo,
+;;                                  :via [:speck.core/name-or-id],
+;;                                  :in []}),
+;;                      :spec :speck.core/name-or-id, :value :foo}
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -143,53 +175,51 @@
 
 ;; Fails required key check
 (s/explain ::person
-  {::first-name "Elon"})
-;; val: #:speck.core{:first-name "Elon"} fails spec: :speck.core/person predicate: (contains? % :speck.core/last-name)
-;; val: #:speck.core{:first-name "Elon"} fails spec: :speck.core/person predicate: (contains? % :speck.core/email)
-
+           {::first-name "Elon"})
+;; #:speck.core{:first-name "Elon"} - failed: (contains? % :speck.core/last-name)
+;;   spec: :speck.core/person
+;; #:speck.core{:first-name "Elon"} - failed: (contains? % :speck.core/email)
+;;   spec: :speck.core/person
 
 ;; Fails attribute conformance
 (s/explain ::person
-  {::first-name "Elon"
-   ::last-name "Musk"
-   ::email "n/a"})
-;; In: [:speck.core/email] val: "n/a" fails spec: :speck.core/email-type at: [:speck.core/email] predicate: (re-matches email-regex %)
+           {::first-name "Elon"
+            ::last-name "Musk"
+            ::email "n/a"})
+;; "n/a" - failed: (re-matches email-regex %) in: [:speck.core/email]
+;;   at: [:speck.core/email] spec: :speck.core/email-type
 
-
-;; a person map that uses unqualified keys but checks conformance against the namespaced specs we registered earlier:
+;; a `person` map that uses unqualified keys but checks conformance against the namespaced specs we registered earlier:
 
 (s/def :unq/person
   (s/keys :req-un [::first-name ::last-name ::email]
           :opt-un [::phone]))
 
 (s/conform :unq/person
-  {:first-name "Elon"
-   :last-name "Musk"
-   :email "elon@example.com"})
-;;{:first-name "Elon",
-;; :last-name "Musk",
-;; :email "elon@example.com"}
+           {:first-name "Elon"
+            :last-name "Musk"
+            :email "elon@example.com"})
+;; => {:first-name "Elon", :last-name "Musk", :email "elon@example.com"}
 
 (s/explain :unq/person
-  {:first-name "Elon"
-   :last-name "Musk"
-   :email "n/a"})
-;; In: [:email] val: "n/a" fails spec: :speck.core/email-type at: [:email] predicate: (re-matches email-regex %)
-
+           {:first-name "Elon"
+            :last-name "Musk"
+            :email "n/a"})
+;; "n/a" - failed: (re-matches email-regex %) in: [:email] at: [:email]
+;;   spec: :speck.core/email-type
 
 (s/explain :unq/person
            {:first-name "Elon"})
-;; val: {:first-name "Elon"} fails spec: :unq/person predicate: (contains? % :last-name)
-;; val: {:first-name "Elon"} fails spec: :unq/person predicate: (contains? % :email)
-
+;; {:first-name "Elon"} - failed: (contains? % :last-name) spec: :unq/person
+;; {:first-name "Elon"} - failed: (contains? % :email) spec: :unq/person
 
 ;; Unqualified keys can also be used to validate record attributes:
 (defrecord Person [first-name last-name email phone])
 
 (s/explain :unq/person
            (->Person "Elon" nil nil nil))
-;; In: [:last-name] val: nil fails spec: :speck.core/last-name at: [:last-name] predicate: string?
-;; In: [:email] val: nil fails spec: :speck.core/email-type at: [:email] predicate: string?
+;; nil - failed: string? in: [:last-name] at: [:last-name] spec: :speck.core/last-name
+;; nil - failed: string? in: [:email] at: [:email] spec: :speck.core/email-type
 
 (s/conform :unq/person
            (->Person "Elon" "Musk" "elon@example.com" nil))
@@ -199,6 +229,9 @@
 
 ;; One common occurrence in Clojure is the use of "keyword args" where
 ;; keyword keys and values are passed in a sequential data structure as options.
+;; Spec provides special support for this pattern with the regex op keys*.
+;; keys* has the same syntax and semantics as keys but can be embedded inside a
+;; sequential regex structure.
 
 (s/def ::port number?)
 (s/def ::host string?)
@@ -222,7 +255,7 @@
           {:animal/kind "dog"
            :animal/says "woof"
            :dog/tail? true
-           :dog/breed "retrirver"})
+           :dog/breed "retriever"})
 ;;=> true
 
 
@@ -246,32 +279,33 @@
 (defmethod event-type :event/error [_]
   (s/keys :req [:event/type :event/timestamp :error/message :error/code]))
 
-; now our mult-spec:
+;; now our mult-spec:
 (s/def :event/event (s/multi-spec event-type :event/type))
 
 (s/valid? :event/event
-  {:event/type :event/search
-   :event/timestamp 1463970123000
-   :search/url "http://clojure.org"}) ;; true
+          {:event/type :event/search
+           :event/timestamp 1463970123000
+           :search/url "http://clojure.org"}) ;; true
 
 
 (s/valid? :event/event
-  {:event/type :event/error
-   :event/timestamp 1463970123000
-   :error/message "Invalid host"
-   :error/code 500}) ;; true
+          {:event/type :event/error
+           :event/timestamp 1463970123000
+           :error/message "Invalid host"
+           :error/code 500}) ;; true
 
 (s/explain :event/event
-  {:event/type :event/restart})
-;; val: {:event/type :event/restart} fails at: [:event/restart] predicate: my.domain/event-type,  no method
+           {:event/type :event/restart})
+;; #:event{:type :event/restart} - failed: no method at: [:event/restart]
+;;   spec: :event/event
 
 (s/explain :event/event
-  {:event/type :event/search
-   :search/url 200})
-;; val: {:event/type :event/search, :search/url 200} fails
-;;  at: [:event/search] predicate: [(contains? % :event/timestamp)]
-;; In: [:search/url] val: 200 fails spec: :search/url
-;;   at: [:event/search :search/url] predicate:
+           {:event/type :event/search
+            :search/url 200})
+;; 200 - failed: string? in: [:search/url]
+;;   at: [:event/search :search/url] spec: :search/url
+;; {:event/type :event/search, :search/url 200} - failed: (contains? % :event/timestamp)
+;;   at: [:event/search] spec: :event/event
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -303,14 +337,13 @@
 (s/conform ::vnum3 [1 2 3]) ;; #{1 3 2}
 
 (s/explain ::vnum3 #{1 2 3})
-;; val: #{1 3 2} fails spec: :speck.core/vnum3 predicate: vector?
+;; #{1 3 2} - failed: vector? spec: :speck.core/vnum3
 
 (s/explain ::vnum3 [1 1 1])
-;; val: [1 1 1] fails spec: :speck.core/vnum3 predicate: distinct?
+;; [1 1 1] - failed: distinct? spec: :speck.core/vnum3
 
 (s/explain ::vnum3 [1 2 :a])
-;; In: [2] val: :a fails spec: :speck.core/vnum3 predicate: number?
-
+;; :a - failed: number? in: [2] spec: :speck.core/vnum3
 
 ;; another case is a fixed-size positional collection with fields of known type at
 ;; different positions. For that we have tuple
@@ -324,7 +357,7 @@
 ;; regular expression
 (s/def ::point-2 (s/cat :x double? :y double? :z double?))
 (s/conform ::point-2 [1.5 2.5 -0.5])
-;;{:x 1.5, :y 2.5, :z -0.5}
+;; {:x 1.5, :y 2.5, :z -0.5}
 
 ;; collection
 (s/def ::point-3 (s/coll-of double?))
@@ -352,7 +385,6 @@
 
 ;; an ingredient represented by a vector containing a quantity (number) and a unit (keyword)
 (s/def ::ingedient (s/cat :quantity number? :unit keyword?))
-
 (s/conform ::ingedient [2 :teaspoon])
 ;; {:quantity 2, :unit :teaspoon}
 
@@ -360,11 +392,10 @@
 
 ;; pass string for unit instead of keyword
 (s/explain ::ingedient [11 "peaches"])
-;; In: [1] val: "peaches" fails spec: :speck.core/ingedient at: [:unit] predicate: keyword?
+;; "peaches" - failed: keyword? in: [1] at: [:unit] spec: :speck.core/ingedient
 
 (s/explain ::ingedient [2])
-;; val: () fails spec: :speck.core/ingedient at: [:unit] predicate: keyword?,  Insufficient input
-
+;; () - failed: Insufficient input at: [:unit] spec: :speck.core/ingedient
 
 ;;; various occurence operators *, +, and ?:
 
@@ -374,7 +405,7 @@
 ;; [:a :b :c]
 
 (s/explain ::seq-of-keywords [10 20])
-;; In: [0] val: 10 fails spec: :speck.core/seq-of-keywords predicate: keyword?
+;; 10 - failed: keyword? in: [0] spec: :speck.core/seq-of-keywords
 
 (s/def ::odds-then-maybe-even (s/cat :odds (s/+ odd?)
                                      :even (s/? even?)))
@@ -385,7 +416,7 @@
 ;; {:odds [1]}
 
 (s/explain ::odds-then-maybe-even [100])
-;; In: [0] val: 100 fails spec: :speck.core/odds-then-maybe-even at: [:odds] predicate: odd?
+;; 100 - failed: odd? in: [0] at: [:odds] spec: :speck.core/odds-then-maybe-even
 
 ;; opts are alternating keyword and booleans
 (s/def ::opts (s/* (s/cat :opt keyword? :val boolean?)))
@@ -399,7 +430,6 @@
                         :val (s/alt :s string? :b boolean?))))
 
 (s/conform ::config ["-server" "foo" "-verbose" true "-user" "joe"])
-
 ;;[{:prop "-server", :val [:s "foo"]}
 ;; {:prop "-verbose", :val [:b true]}
 ;; {:prop "-user", :val [:s "joe"]}]
@@ -408,10 +438,8 @@
 ;; If you need a description of a specification, use describe to retrieve one
 (s/describe ::seq-of-keywords)
 ;; (* keyword?)
-
 (s/describe ::odds-then-maybe-even)
 ;; (cat :odds (+ odd?) :even (? even?))
-
 (s/describe ::opts)
 ;; (* (cat :opt keyword? :val boolean?))
 
@@ -423,8 +451,7 @@
 (s/valid? ::even-strings ["a" "b" "c"]) ;; false
 (s/valid? ::even-strings [1 2]) ;; false
 (s/explain ::even-strings [1 2])
-;; val: 1 fails spec: :speck.core/even-strings predicate: string?
-
+;; 1 - failed: string? in: [0] spec: :speck.core/even-strings
 
 ;; include a nested sequential collection, you must use an explicit call to spec to start
 ;; a new nested regex context
@@ -453,7 +480,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Using spec for validation
-;;spec can be used for runtime data validation.
+;;   spec can be used for runtime data validation.
 
 (defn person-name
   [person]
@@ -483,7 +510,7 @@
 ;;   Spec assertion failed val: 100 fails predicate: map?
 ;;   :clojure.spec/failure :assertion-failed
 ;;
- ;;  #:clojure.spec{:problems [{:path [], :pred map?, :val 100, :via [], :in []}], :failure :assertion-failed}
+;;  #:clojure.spec{:problems [{:path [], :pred map?, :val 100, :via [], :in []}], :failure :assertion-failed}
 
 
 ;; call conform and use the return value to destructure the input.
@@ -508,10 +535,9 @@
 
 (s/conform ::config ["-server" "foo" "-verbose" true "-user" "joe"])
 
-;[{:prop "-server", :val [:s "foo"]}
-; {:prop "-verbose", :val [:b true]}
-; {:prop "-user", :val [:s "joe"]}]
-
+;;[{:prop "-server", :val [:s "foo"]}
+;; {:prop "-verbose", :val [:b true]}
+;; {:prop "-user", :val [:s "joe"]}]
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -527,28 +553,44 @@
 
 ;; now we give this spec:
 (s/fdef ranged-rand
-        :args (s/and (s/cat :start int? :end int?)
-                     #(< (:start %) (:end %)))
-        :ret int?
-        :fn (s/and #(>= (:ret %) (-> % :args :start))
-                   #(< (:ret %) (-> % :args :end))))
+  :args (s/and (s/cat :start int? :end int?)
+               #(< (:start %) (:end %)))
+  :ret int?
+  :fn (s/and #(>= (:ret %) (-> % :args :start))
+             #(< (:ret %) (-> % :args :end))))
 
+(r/doc ranged-rand)
+;; -------------------------
+;; speck.core/ranged-rand
+;; ([start end])
+;;   Returns random integer in range start <= rand < end
+;; Spec
+;;   args: (and (cat :start int? :end int?) (< (:start %) (:end %)))
+;;   ret: int?
+;;   fn: (and (>= (:ret %) (-> % :args :start)) (< (:ret %) (-> % :args :end)))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Higher order functions
 
-;;Higher order functions are common in Clojure and spec provides fspec to
-;;support spec’ing them.
+;; Higher order functions are common in Clojure and spec provides fspec to
+;; support spec’ing them.
 
 ;;  returns a function that adds x. 
 (defn adder [x] #(+ x %))
 
+(def add-3 (adder 3)) ; use
+
+(add-3 4) ;; 7
+
 (s/fdef adder
-        :args (s/cat :x number?)
-        :ret  (s/fspec :args (s/cat :y number?)
-                       :ret number?)
-        :fn #(= (-> :args :x) ((:ret %) 0))) ; returns a function
+  :args (s/cat :x number?)
+  :ret  (s/fspec :args (s/cat :y number?)
+                 :ret number?)  ; returns a function
+  :fn #(= (-> :args :x) ((:ret %) 0)))
+;; :fn spec can state a general property that relates the :args (where we know `x`)
+;;  and the result we get from invoking the function returned from `adder`, namely
+;;  that adding 0 to it should return `x`.
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -560,19 +602,36 @@
   :args (s/cat :names (s/* simple-symbol?))
   :ret  any?)
 
-(declare 100)
+;; (declare 100)
 
 ;; Java exception
-;;Call to clojure.core/declare did not conform to spec: In: [0] val:
-;;   (100) fails at: [:args] predicate: (cat :names (* symbol?)), Extra
-;;   input :clojure.spec/args (100)
+;;   Syntax error macroexpanding clojure.core/declare at (core.clj:605:1).
+;;   100 - failed: simple-symbol? at: [:names]
 
-;; 1. Unhandled clojure.lang.ExceptionInfo
-;;   Call to clojure.core/declare did not conform to spec: In: [0] val:
-;;   100 fails at: [:args :names] predicate: simple-symbol?
-;;   :clojure.spec/args (100)
-;;
-;;   #:clojure.spec{:problems [{:path [:args :names], :pred simple-symbol?, :val 100, :via [], :in [0]}], :args (100)}
+
+;; 2. Unhandled clojure.lang.Compiler$CompilerException
+;; Error compiling c:/src/Clojure/speck/src/speck/core.clj at (605:4)
+;; #:clojure.error{:phase :macro-syntax-check,
+;;                 :line 605,
+;;                 :column 4,
+;;                 :source "c:/src/Clojure/speck/src/speck/core.clj",
+;;                 :symbol clojure.core/declare}
+
+;; 1. Caused by clojure.lang.ExceptionInfo
+;; Call to clojure.core/declare did not conform to spec.
+;; #:clojure.spec.alpha{:problems
+;;                      [{:path [:names],
+;;                        :pred clojure.core/simple-symbol?,
+;;                        :val 100,
+;;                        :via [],
+;;                        :in [0]}],
+;;                      :spec
+;;                      #object[clojure.spec.alpha$regex ... 
+;;                      :value (100),
+;;                      :args (100)}
+
+;; Because macros are always checked during macro expansion, you do not need
+;; to call instrument for macro specs.
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -594,7 +653,6 @@
 (s/def ::game (s/keys :req [::players ::deck]))
 
 ;; now validate a piece of this data against the schema:
-
 (def kenny
   {::name "Kenny Rogers"
    ::score 100
@@ -605,24 +663,24 @@
 
 ;; now some bad data:
 (s/explain ::game
-           {::deck deck
+           {::deck deck 
             ::players [{::name "Kenny Rogers"
                         ::score 100
                         ::hand [[2 :banana]]}]})
-;; In: [:speck.core/players 0 :speck.core/hand 0 1] val: :banana fails spec:
-;; :speck.core/card at: [:speck.core/players :speck.core/hand 1] predicate: suit?
+;; :banana - failed: suit? in: [:speck.core/players 0 :speck.core/hand 0 1]
+;; at: [:speck.core/players :speck.core/hand 1] spec: :speck.core/card
 
 (defn total-cards [{:keys [::deck ::players] :as game}]
   (apply + (count deck)
          (map #(-> % ::hand count) players)))
 
-(defn deal [game] ...)
+(defn deal [game] game ,,,)
 
 (s/fdef deal
-        :args (s/cat :game ::game)
-        :ret  ::game
-        :fn   #(= (total-cards (-> % :args :game))
-                  (total-cards (-> % :ret))))
+  :ar gs (s/cat :game ::game)
+  :ret  ::game
+  :fn   #(= (total-cards (-> % :args :game))
+            (total-cards (-> % :ret))))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -633,13 +691,14 @@
 
 
 ;; require this to run spec generators durring testing
-(require '[clojure.spec.gen :as gen])
+(require '[clojure.spec.gen.alpha :as gen])
 
-(gen/generate (s/gen integer?)) ;; -115723691
+(gen/generate (s/gen int?)) ;; -115723691
 
 (gen/generate (s/gen nil?)) ;; nil
 
 (gen/sample (s/gen string?))
+;; ("" "n" "Y" "U" "Z" "T5Mj" "LNtD" "Lk" "76Xl" "7f31u")
 ;; ("" "" "u" "0" "" "H7H4" "6f3ZS" "" "wkzBFz7s" "54")
 ;; ("" "" "" "6" "W" "" "zops3" "X0" "EVI" "LJwRKjN7o")
 
@@ -661,7 +720,6 @@
 
 ;; WOWSERS!
 
-
 ;; generate a random player in out card game
 (gen/generate (s/gen ::player))
 
@@ -680,14 +738,15 @@
 
 
 ;; generating a whole game
-
 ;; (gen/generate (s/gen ::game))
-
-;; really long game.
+;; ... really long game ...
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Exercise
+;;   returns pairs of generated and conformed values for a spec. `exercise` by
+;;   default produces 10 samples (like `sample`) but you can pass both functions
+;;;  a number indicating the number of samples to produce.
 
 (s/exercise (s/cat :k keyword? :ns (s/+ number?)) 5)
 
@@ -724,15 +783,15 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Using s/and Generators
 
-;; a predicate presumes values of a particular type but the spec
-;; does not specify them:
+;; All of the generators we’ve seen worked fine but there are a number of cases
+;;  where they will need some additional help.
+;; One common case is when the predicate implicitly presumes values of a particular
+;;  type but the spec does not specify them:
 
 (gen/generate (s/gen even?))
 
-;;1. Unhandled clojure.lang.ExceptionInfo
-;;   Unable to construct gen at: [] for:
-;;   clojure.core$even_QMARK_@353f57d9
-;;   #:clojure.spec{:path [], :form #function[clojure.core/even?], :failure :no-gen}
+;; Execution error (ExceptionInfo) at speck.core/eval7718 (form-init16562912574267509220.clj:791).
+;; Unable to construct gen at: [] for: clojure.core$even_QMARK_@476bd286
 
 ;; we can use 'and' to create generator for primative predicates that dont have generators
 
@@ -751,6 +810,7 @@
 
 
 ;; consider trying to generate strings that happen to contain the world "hello"
+;; which produces too few values.
 
 ;; hello, are you the one I'm looking for?
 (gen/sample (s/gen (s/and string? #(clojure.string/includes? % "hello"))))
@@ -765,22 +825,31 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Custom Generators
 
+
+
+;; There are three ways to build up custom generators - in decreasing order
+;;  of preference:
+;; *Let spec create a generator based on a predicate/spec
+;; *Create your own generator from the tools in clojure.spec.gen.alpha
+;; *Use test.check or other test.check compatible libraries (like test.chuck)
+
+
 ;; consider a spec with a predicate to specify keywords from a particular namespace:
 
 (s/def ::kws (s/and keyword? #(= (namespace %) "speck.core")))
 (s/valid? ::kws :speck.core/name) ;; true
 (gen/sample (s/gen ::kws))
-;; Couldn't satisfy such-that predicate after 100 tries.
+;; clojure.lang.ExceptionInfo - Couldn't satisfy such-that predicate after 100 tries.
 
 ;; A set is a valid predicate spec so we can create one and ask for it’s generator:
-(def kw-gen (s/gen #{:speck.core/name :speck.core/hand :speck.core/id}))
+(def kw-gen (s/gen #{:speck.core/name :speck.core/occupation :speck.core/id}))
 (gen/sample kw-gen 5)
 
-;;(:speck.core/id
-;; :speck.core/id
-;; :speck.core/name
-;; :speck.core/hand
-;; :speck.core/name)
+;; (:speck.core/name
+;;  :speck.core/name
+;;  :speck.core/occupation
+;;  :speck.core/name
+;;  :speck.core/id)
 
 ;; To redefine our spec using this custom generator, use with-gen which takes a spec
 ;; and a replacement generator:
@@ -791,11 +860,15 @@
 (gen/sample (s/gen ::kws))
 ;; (:speck.core/name :speck.core/id :speck.core/name ...)
 
+;; In this case we want our keyword to have open names but fixed namespaces.
+;; There are many ways to accomplish this but one of the simplest is to use
+;; `fmap` to build up a keyword based on generated strings: 
 
 (def kw-gen-2 (gen/fmap #(keyword "speck.core" %) (gen/string-alphanumeric)))
 (gen/sample kw-gen-2 5)
 ;; (:speck.core/ :speck.core/8 :speck.core/ :speck.core/u5 :speck.core/Yn)
 
+;; some of these are too simple
 
 ;; filter with such-that
 (def kw-gen-3 (gen/fmap #(keyword "speck.core" %)
@@ -844,40 +917,38 @@
 ;; (-1.0 -2.0 0.625 0.5 0.0 1.0 3.25 -0.75 -0.5 -4.5)
 
 
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Instrumentation and Testing
 
 ;; include development and testing functionality:
-(require '[clojure.spec.test :as stest])
+(require '[clojure.spec.test.alpha :as stest])
 
 ;;; Instrumentation
-
 
 (stest/instrument `ranged-rand)
 
 ;; now if args don't meet the spec then you have and error:
 (ranged-rand 8 5)
-
-;;1. Unhandled clojure.lang.ExceptionInfo
-;;   Call to #'speck.core/ranged-rand did not conform to spec: val:
-;;   {:start 8, :end 5} fails at: [:args] predicate: (< (:start %) (:end
-;;   %)) :clojure.spec/args (8 5) :clojure.spec/failure :instrument
-;;   :clojure.spec.test/caller {:file
-;;   "form-init2395958824592787937.clj", :line 860, :var-scope
-;;   speck.core/eval12488}
-
-;;   {:clojure.spec/problems [{:path [:args], :pred (< (:start %) (:end %)), :val {:start 8, :end 5}, :via [], :in []}], :clojure.spec/args (8 5), :clojure.spec/failure :instrument, :clojure.spec.test/caller {:file "form-init2395958824592787937.clj", :line 860, :var-scope speck.core/eval12488}}
+;; Execution error - invalid arguments to speck.core/ranged-rand at (form-init16562912574267509220.clj:931).
+;; {:start 8, :end 5} - failed: (< (:start %) (:end %))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Testing
 
-(require '[clojure.spec.test :as stest])
+(require '[clojure.spec.test.alpha :as stest])
 
 (stest/check `ranged-rand)
-;; ({:spec #object[clojure.spec$fspec_impl$reify__14270 0x71f5b9e3 "clojure.spec$fspec_impl$reify__14270@71f5b9e3"],
-;;  :clojure.spec.test.check/ret {:result true, :num-tests 1000, :seed 1476665471858}, :sym speck.core/ranged-rand})
+;; ({:spec #object[clojure.spec.alpha$fspec_impl$reify__2524 0x45d0ed9c ...
+;;   :clojure.spec.test.check/ret {:result true, :num-tests 1000, :seed 1546904366232},
+;;   :sym speck.core/ranged-rand})
+
+;; *** A keen observer will notice that ranged-rand contains a subtle bug.
+;; If the difference between start and end is very large (larger than is
+;; representable by Long/MAX_VALUE), then ranged-rand will produce an
+;; IntegerOverflowException. If you run check several times you will eventually
+;; cause this case to occur.
+
 
 ;; an error: start and end are swapped
 (defn ranged-rand   ;; BROKEN!
@@ -886,28 +957,36 @@
   (+ start (long (rand (- start end)))))
 
 (stest/abbrev-result (first (stest/check `ranged-rand)))
-
-;;{:spec (fspec
-;;        :args (and (cat :start int? :end int?) (fn* [p1__11467#] (< (:start p1__11467#) (:end p1__11467#)))) :ret int?
-;;        :fn (and
-;;             (fn* [p1__11468#] (>= (:ret p1__11468#) (-> p1__11468# :args :start)))
-;;             (fn* [p1__11469#] (< (:ret p1__11469#) (-> p1__11469# :args :end))))),
-;; :sym speck.core/ranged-rand,
-;; :failure {:clojure.spec/problems [{:path [:fn],
-;;                                   :pred (>= (:ret %) (-> % :args :start)),
-;;                                    :val {:args {:start -4, :end -2}, :ret -5},
-;;                                    :via [], :in []}], :clojure.spec.test/args (-4 -2),
-;;           :clojure.spec.test/val {:args {:start -4, :end -2}, :ret -5},
-;;           :clojure.spec/failure :check-failed}}
-
+;; {:spec (fspec
+;;         :args (and (cat :start int? :end int?) (fn* [p1__7699#] (< (:start p1__7699#) (:end p1__7699#))))
+;;         :ret int?
+;;         :fn (and
+;;              (fn* [p1__7700#] (>= (:ret p1__7700#) (-> p1__7700# :args :start)))
+;;              (fn* [p1__7701#] (< (:ret p1__7701#) (-> p1__7701# :args :end))))),
+;;  :sym speck.core/ranged-rand,
+;;  :failure {:clojure.spec.alpha/problems [{:path [:fn],
+;;                                           :pred (clojure.core/fn [%]
+;;                                                   (clojure.core/>= (:ret %)
+;;                                                                    (clojure.core/-> % :args :start))),
+;;                                           :val {:args {:start -1, :end 1}, :ret -2},
+;;                                           :via [],
+;;                                           :in []}],
+;;            :clojure.spec.alpha/spec #object[clojure.spec.alpha$and_spec_imp ...
+;;            :clojure.spec.alpha/value {:args {:start -1, :end 1}, :ret -2},
+;;            :clojure.spec.test.alpha/args (-1 1),
+;;            :clojure.spec.test.alpha/val {:args {:start -1, :end 1}, :ret -2},
+;;            :clojure.spec.alpha/failure
+;;            :check-failed}}
 
 ;; you can check all of the spec'ed funtions in a namespace with enumerate-namespace
-
 (-> (stest/enumerate-namespace 'user) stest/check)  ;; ()
 
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Combining check and instrument
+
+;; Consider the case where we have a low-level function that invokes a remote
+;;  service and a higher-level function that calls it.
 
 ;; code under test
 
@@ -925,7 +1004,7 @@
 (s/def ::result (s/coll-of string? :gen-max 3))
 (s/def ::error int?)
 (s/def ::response (s/or :ok (s/keys :req [::result])
-                    :err (s/keys :req [::error])))
+                        :err (s/keys :req [::error])))
 
 (s/fdef invoke-service
   :args (s/cat :service any? :request ::request)
@@ -935,14 +1014,18 @@
   :args (s/cat :service any? :query string?)
   :ret (s/or :ok ::result :err ::error))
 
-
-
-
 ;; now test the behavior of run-query while subbing out invoke-service
 
-(stest/instrument `invoke-service {:stub #{`invocke-service}})
+(stest/instrument `invoke-service {:stub #{`invoke-service}})
 ;; [speck.core/invoke-service]
-(invocke-service nil {::query "test"})
+(invoke-service nil {::query "test"})
+;; => #:speck.core{:error -163902}
+;; => #:speck.core{:error 8305500}
+;; => #:speck.core{:result ["91sf28jf0EQx5FKdcgRBF7"]}
+;; => #:speck.core{:result []}
+
+(stest/summarize-results (stest/check `run-query))
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
