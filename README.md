@@ -1,7 +1,9 @@
 # speck
 
 Practicing with Clojure 1.9's spec feature
-Using Clojure 1.9-alpha13
+Using Clojure 1.10
+
+Also experiments with Clojure testing libraries.
 
 Spec is a new Clojure feature for specifying functions, similar to a static
 type system, but more amenable to dynamic typing.
@@ -48,7 +50,7 @@ http://www.github.com/emaphis/speck
 
 ## License
 
-Copyright © 2016 Ed Maphis
+Copyright © 2016-18 Ed Maphis
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
