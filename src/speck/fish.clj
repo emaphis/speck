@@ -138,7 +138,7 @@
 (fish-line 1 2 "Red" "Blue")
 ;; "One fish. Two fish. Red fish. Blue fish."
 
-;; bad data?
+;; bad data
 (fish-line 2 1 "Red" "Blue")
 ;; Spec: #object[clojure.spec.alpha$and_spec_impl$reify__2183 0xe111046
 ;;               "clojure.spec.alpha$and_spec_impl$reify__2183@e111046"]
